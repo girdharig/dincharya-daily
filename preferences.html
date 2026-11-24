@@ -1,0 +1,51 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="robots" content="noindex"><link rel="icon" href="favicon.svg" type="image/svg+xml"><link href="https://fonts.googleapis.com/css2?family=Newsreader:wght@400;600&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet"><link rel="stylesheet" href="style.css"><meta name="theme-color" content="#1E2340"><link rel="apple-touch-icon" href="/icons/apple-touch-icon.png"><title>Your preferences</title></head>
+<body data-page="prefs" data-cta="off" data-footer="off">
+<main class="page" id="app"><h1>Your preferences</h1><p class="sub" id="status">Loading…</p></main>
+<script src="config.js"></script><script src="common.js"></script><script src="site.js"></script>
+<script>
+const token = new URLSearchParams(location.search).get("token") || "";
+const app = document.getElementById("app");
+const masked = p => p ? "••••" + p.slice(-4) : "";
+async function load() {
+  app.replaceChildren(el("h1", {text: "Your preferences"}), el("p", {class: "sub", id: "status", text: "Loading…"}));
+  if (!token) return bad("This link is incomplete. Open it again from your email.");
+  const r = await fn("preferences", {token, action: "get"});
+  if (!r.ok) return bad(r.message);
+  render(r.subscriber);
+}
+function bad(t) { const s = document.getElementById("status"); s.className = "msg bad"; s.textContent = t; }
+function render(s) {
+  const picked = [...s.cultures];
+  app.replaceChildren(el("h1", {text: "Your preferences"}), el("p", {class: "sub", text: "Settings for " + s.email}));
+  const tm = el("input", {type: "time", id: "tm", value: s.send_time});
+  const ph = el("input", {type: "tel", id: "ph", placeholder: "+91 98765 43210", value: s.phone || ""});
+  const wa = el("input", {type: "checkbox", id: "wa"}); wa.checked = ["pending", "active"].includes(s.whatsapp_status);
+  const tg = el("input", {type: "checkbox", id: "tg"}); tg.checked = ["pending", "active"].includes(s.telegram_status);
+  const msg = el("p", {class: "msg", role: "status"});
+  const show = r => { msg.className = "msg " + (r.ok ? "ok" : "bad"); msg.textContent = r.message; };
+  const save = el("button", {class: "btn", text: "Save changes"});
+  save.onclick = async () => {
+    if (!picked.length) return show({ok: false, message: "Choose at least one tradition."});
+    const num = ph.value.trim();
+    if (num && !/^\+[\d\s().-]{8,20}$/.test(num)) return show({ok: false, message: "Start your mobile number with + and the country code, like +91 98765 43210."});
+    if (wa.checked && !num) return show({ok: false, message: "Add your mobile number to get WhatsApp messages."});
+    save.disabled = true;
+    const u = await fn("preferences", {token, action: "update", cultures: picked, send_time: tm.value, timezone: tzName(), language: s.language, phone: num, whatsapp_consent: wa.checked, telegram: tg.checked});
+    save.disabled = false;
+    if (u.ok) { const g = await fn("preferences", {token, action: "get"}); if (g.ok) { render(g.subscriber); const m = document.getElementById("saved"); if (m) m.textContent = "Saved."; return; } }
+    show(u);
+  };
+  const verify = el("div"), tgBox = el("div");
+  app.append(el("h2", {text: "Traditions"}), chipPicker(picked), el("label", {for: "tm", text: "Send time (" + tzName() + ")"}), tm,
+    el("h2", {text: "Mobile number"}), el("label", {for: "ph", text: "Mobile number (optional, start with + and the country code)"}), ph,
+    el("p", {class: "hint", text: "Used only for WhatsApp. Leave it empty if you don't want to share it."}),
+    el("h2", {text: "Also send my daily message on"}),
+    el("label", {class: "check", for: "wa"}, [wa, el("span", {text: "WhatsApp" + (s.phone && s.whatsapp_status !== "none" ? " (" + masked(s.phone) + (s.whatsapp_status === "active" ? ", on" : ", not verified yet") + ")" : "")})]),
+    el("label", {class: "check", for: "tg"}, [tg, el("span", {text: "Telegram" + (s.telegram_status === "active" ? " (connected)" : s.telegram_status === "stopped" ? " (paused: send /start to the bot to resume)" : "")})]),
+    save, el("p", {class: "msg ok", id: "saved"}), msg, verify, tgBox,
+    el("p", {}, [el("a", {href: "unsubscribe?token=" + encodeURIComponent(token), text: "Unsubscribe instead"})]));
+  if (s.phone && s.whatsapp_status === "pending") waVerify(token, verify, masked(s.phone), load);
+  if (["pending", "stopped"].includes(s.telegram_status) || s.telegram_status === "active") tgConnect(tgBox, s.telegram_link, s.telegram_status);
+}
+load();
+</script></body></html>

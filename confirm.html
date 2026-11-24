@@ -1,0 +1,28 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="robots" content="noindex"><link rel="icon" href="favicon.svg" type="image/svg+xml"><link href="https://fonts.googleapis.com/css2?family=Newsreader:wght@400;600&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet"><link rel="stylesheet" href="style.css"><title>Confirm subscription</title><meta name="theme-color" content="#1E2340"><link rel="apple-touch-icon" href="/icons/apple-touch-icon.png"></head>
+<body data-page="confirm" data-cta="off" data-footer="off">
+<main class="page">
+  <h1>Confirm your subscription</h1>
+  <p class="sub" id="intro">One tap and your daily digest starts.</p>
+  <button class="btn" id="go">Confirm subscription</button>
+  <p class="msg" id="msg" role="status"></p>
+  <div id="wa"></div>
+  <div id="tg"></div>
+  <p><a class="btn ghost" href="/app">Open today</a></p>
+</main>
+<script src="config.js"></script><script src="common.js"></script><script src="site.js"></script>
+<script>
+const token = new URLSearchParams(location.search).get("token") || "";
+const go = document.getElementById("go"), msg = document.getElementById("msg");
+if (!token) { go.hidden = true; msg.className = "msg bad"; msg.textContent = "This link is incomplete. Open it again from your email."; }
+go.onclick = async () => {
+  go.disabled = true;
+  const r = await fn("confirm", {token});
+  msg.className = "msg " + (r.ok ? "ok" : "bad"); msg.textContent = r.message;
+  if (!r.ok) { go.disabled = false; return; }
+  go.hidden = true; document.getElementById("intro").hidden = true;
+  if (!r.manage_token) return;
+  if (r.whatsapp_status === "pending") waVerify(r.manage_token, document.getElementById("wa"), r.phone_masked || "your number");
+  const p = await fn("preferences", {token: r.manage_token, action: "get"});
+  if (p.ok && p.subscriber.telegram_status === "pending") tgConnect(document.getElementById("tg"), p.subscriber.telegram_link, "pending");
+};
+</script></body></html>

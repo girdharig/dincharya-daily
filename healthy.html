@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:wght@400;600&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<title>Healthy Living · Dincharya</title>
+<meta name="description" content="A healthier life, one daily habit at a time. Build a simple daily routine of yoga, movement, meditation, healthy eating and sleep.">
+<link rel="manifest" href="/manifest.webmanifest"><meta name="theme-color" content="#1E2340"><link rel="apple-touch-icon" href="/icons/apple-touch-icon.png"><meta property="og:type" content="website"><meta property="og:site_name" content="Dincharya"><meta property="og:title" content="Healthy Living · Dincharya"><meta property="og:description" content="A healthier life, one daily habit at a time. Build a simple daily routine of yoga, movement, meditation, healthy eating and sleep."><meta property="og:image" content="https://www.dincharya.co.in/icons/og.png"><meta property="og:url" content="https://www.dincharya.co.in/healthy"><meta name="twitter:card" content="summary_large_image"><link rel="canonical" href="https://www.dincharya.co.in/healthy"></head>
+<body data-page="healthy" data-cta="off">
+<main class="page" id="root"></main>
+<script src="config.js"></script><script src="common.js"></script>
+<script>
+const CATS = {
+  yoga:   ["Yoga & Flexibility", "Beginner yoga, stretching and chair yoga", "#1F6F78"],
+  mind:   ["Mind & Meditation", "Guided meditation, breathing and relaxation", "#6B53C9"],
+  move:   ["Fitness & Movement", "Walking, daily steps and movement breaks", "#D9731F"],
+  eat:    ["Healthy Eating", "Balanced Indian meals, fruit and vegetables", "#1E8E5A"],
+  sleep:  ["Sleep & Recovery", "Bedtime routines and relaxation", "#3C6FD1"],
+  indian: ["Indian Wellness", "Surya Namaskar, gratitude and mindful living", "#C98A0B"]};
+const SLOTS = ["morning", "afternoon", "evening", "night"], SLOTNAME = {morning: "Morning", afternoon: "Afternoon", evening: "Evening", night: "Night"};
+const MIND = {m1: "breathe", i2: "breathe", m2: "meditate"};
+const root = document.getElementById("root");
+let H = {habits: [], routines: [], rh: [], by: {}}, P = null, LOG = new Set(), view = "intro", exploreCat = "all";
+let ans = {goals: [], minutes: 10, timing: "flexible", level: "beginner"}, draft = [], draftRoutine = null, msgBox = null;
+let token = ""; try { token = localStorage.getItem("dina_wtoken") || ""; } catch (e) {}
+if (!/^[0-9a-f]{32,64}$/.test(token)) { token = [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, "0")).join(""); try { localStorage.setItem("dina_wtoken", token); } catch (e) {} }
+const api = (action, body = {}) => fn("wellness", {token, action, ...body});
+const today = () => iso(new Date());
+const slotOf = h => (P && P.timing && P.timing !== "flexible" && h.slot !== "night") ? P.timing : h.slot;
+const mins = ids => ids.reduce((s, id) => s + (H.by[id] ? H.by[id].minutes : 0), 0);
+const go = v => { view = v; render(); window.scrollTo(0, 0); };
+const note = (t, ok = true) => { if (msgBox) { msgBox.className = "msg " + (ok ? "ok" : "bad"); msgBox.textContent = t; } };
+
+function recommend(a) {
+  if (a.level === "gentle") return "C";
+  if (a.goals.includes("mindful")) return "D";
+  if (a.goals.includes("stress") || a.goals.includes("active")) return "A";
+  return a.minutes >= 30 ? "B" : "A";
+}
+function planFor(rid, a) {
+  const ids = H.rh.filter(x => x.routine_id === rid).sort((x, y) => x.sort - y.sort).map(x => x.habit_id), out = []; let total = 0;
+  ids.forEach(id => { const m = H.by[id].minutes; if (total + m <= a.minutes) { out.push(id); total += m; } });
+  ids.forEach(id => { if (out.length < 3 && !out.includes(id)) out.push(id); });
+  return ids.filter(id => out.includes(id));
+}
+function chips(options, get, multi, onPick) {
+  const box = el("div", {class: "chips", role: "group"}), on = k => multi ? get().includes(k) : get() === k;
+  options.forEach(([k, label]) => {
+    const b = el("button", {type: "button", class: "chip", style: "--cc:var(--acc)", "aria-pressed": String(on(k)), text: label});
+    b.onclick = () => { onPick(k); box.querySelectorAll("button").forEach((x, i) => x.setAttribute("aria-pressed", String(on(options[i][0])))); };
+    box.append(b);
+  });
+  return box;
+}
+const disclaimer = () => el("div", {class: "disc"}, [el("strong", {text: "General wellness, not medical advice. "}),
+  "If you have a health condition, are pregnant, or haven't been active for a while, check with your doctor before starting something new. Stop if you feel pain, dizziness or chest discomfort. Sources: ",
+  el("a", {href: "https://www.who.int/news-room/fact-sheets/detail/physical-activity", text: "WHO", target: "_blank", rel: "noopener"}), ", ",
+  el("a", {href: "https://www.nccih.nih.gov/health/yoga-what-you-need-to-know", text: "NCCIH", target: "_blank", rel: "noopener"}), " and ",
+  el("a", {href: "https://www.nin.res.in/", text: "ICMR-NIN", target: "_blank", rel: "noopener"}), "."]);
+
+function render() {
+  root.replaceChildren(); msgBox = el("p", {class: "msg", role: "status"});
+  ({intro, quiz, routines, customize, today: todayView, explore})[view]();
+}
+
+function intro() {
+  root.append(el("img", {class: "banner", src: "img/c-quiet.svg", alt: "", width: "800", height: "220", style: "height:190px"}),
+    el("h1", {text: "Healthy Living"}), el("p", {class: "lead", text: "A healthier life, one daily habit at a time."}),
+    el("p", {text: "Build a simple daily routine from yoga, movement, meditation, healthy eating and sleep, matched to your time and your energy. Tick off what you do, and go at your own pace."}));
+  const grid = el("div", {class: "cat-grid"});
+  Object.entries(CATS).forEach(([k, [n, d]]) => grid.append(el("button", {class: "cat", type: "button", onclick: () => { exploreCat = k; go("explore"); }}, [el("img", {src: "img/w-" + k + ".svg", alt: "", width: "48", height: "48"}), el("b", {text: n}), el("span", {text: d})])));
+  root.append(grid, el("div", {class: "row"}, [el("button", {class: "btn", text: P ? "Open today's checklist" : "Build my daily plan", onclick: () => go(P ? "today" : "quiz")}), el("button", {class: "btn ghost", text: "Browse habits", onclick: () => { exploreCat = "all"; go("explore"); }}), el("a", {class: "btn ghost", href: "/mindful", text: "Mindful Moments"})]), disclaimer());
+}
+
+function quiz() {
+  root.append(el("h1", {text: "Your plan"}), el("p", {class: "sub", text: "Four quick questions. We don't ask for anything personal, only what helps build a useful starting routine."}));
+  root.append(el("p", {class: "q", text: "1. What would you like to improve? (pick any)"}), chips([["active", "Be more physically active"], ["stress", "Reduce stress"], ["sleep", "Improve sleep"], ["eating", "Eat healthier"], ["mindful", "Build a yoga or meditation practice"], ["overall", "Improve overall well-being"]], () => ans.goals, true, k => { const i = ans.goals.indexOf(k); i < 0 ? ans.goals.push(k) : ans.goals.splice(i, 1); }));
+  root.append(el("p", {class: "q", text: "2. How much time can you spend daily?"}), chips([[5, "5 minutes"], [10, "10 minutes"], [15, "15 minutes"], [60, "30 minutes or more"]], () => ans.minutes, false, k => ans.minutes = k));
+  root.append(el("p", {class: "q", text: "3. Which part of the day suits you?"}), chips([["morning", "Morning"], ["afternoon", "Afternoon"], ["evening", "Evening"], ["flexible", "Flexible"]], () => ans.timing, false, k => ans.timing = k));
+  root.append(el("p", {class: "q", text: "4. What activity level is right for you?"}), chips([["beginner", "Beginner"], ["some", "Somewhat active"], ["regular", "Regularly active"], ["gentle", "Gentle, low-impact only"]], () => ans.level, false, k => ans.level = k));
+  root.append(el("div", {class: "row"}, [el("button", {class: "btn", text: "See my routines", onclick: () => { if (!ans.goals.length) return note("Pick at least one goal so we can suggest a routine.", false); go("routines"); }}),
+    el("button", {class: "btn ghost", text: "Back", onclick: () => go(P ? "today" : "intro")})]), msgBox);
+}
+
+function routines() {
+  const rec = recommend(ans);
+  root.append(el("h1", {text: "Choose a routine"}), el("p", {class: "sub", text: "Start with a ready-made routine, then add or remove habits on the next screen."}));
+  [...H.routines].sort((a, b) => (a.id === rec ? -1 : b.id === rec ? 1 : a.sort - b.sort)).forEach(r => {
+    const ids = planFor(r.id, ans);
+    root.append(el("div", {class: "rcard" + (r.id === rec ? " rec" : "")}, [
+      el("h3", {}, [r.name, r.id === rec ? el("span", {class: "badge", text: "Recommended for you"}) : ""]), el("p", {class: "sub", text: r.goal + ". " + r.blurb}),
+      el("ul", {}, ids.map(id => el("li", {text: H.by[id].title + " · " + H.by[id].minutes + " min"}))),
+      el("button", {class: "btn", text: "Use this routine", onclick: () => { draft = ids; draftRoutine = r.id; go("customize"); }})]));
+  });
+  root.append(el("button", {class: "btn ghost", text: "Back", onclick: () => go("quiz")}));
+}
+
+function customize() {
+  root.append(el("h1", {text: "Make it yours"}), el("p", {class: "sub", text: "Tick the habits you'd like. You can change this any time."}));
+  const total = el("p", {class: "sub"}), save = el("button", {class: "btn", text: "Save my plan"});
+  const upd = () => { total.textContent = draft.length + " habits · about " + mins(draft) + " minutes a day"; save.disabled = !draft.length; };
+  Object.entries(CATS).forEach(([c, [n]]) => {
+    root.append(el("div", {class: "slot", text: n}));
+    H.habits.filter(h => h.category === c).forEach(h => {
+      const cb = el("input", {type: "checkbox", id: "h-" + h.id, style: "width:auto"}); cb.checked = draft.includes(h.id);
+      cb.onchange = () => { cb.checked ? draft.push(h.id) : draft.splice(draft.indexOf(h.id), 1); upd(); };
+      root.append(el("label", {class: "check", for: "h-" + h.id, style: "margin:6px 0"}, [cb, el("span", {text: h.title + " · " + h.minutes + " min"})]));
+    });
+  });
+  save.onclick = async () => {
+    save.disabled = true; const r = await api("save", {goals: ans.goals, minutes: ans.minutes, timing: ans.timing, level: ans.level, routine_id: draftRoutine, habit_ids: draft}); save.disabled = false;
+    if (!r.ok) return note(r.message, false);
+    P = {goals: [...ans.goals], minutes: ans.minutes, timing: ans.timing, level: ans.level, routine_id: draftRoutine, habit_ids: [...draft]}; go("today");
+  };
+  root.append(total, el("div", {class: "row"}, [save, el("button", {class: "btn ghost", text: "Back", onclick: () => go(P ? "today" : "routines")})]), msgBox); upd();
+}
+
+function todayView() {
+  const d = today(), plan = P.habit_ids.filter(id => H.by[id]), hr = new Date().getHours();
+  const done = () => plan.filter(id => LOG.has(d + "|" + id)).length;
+  root.append(el("h1", {text: hr < 12 ? "Good morning! 🌞" : hr < 17 ? "Good afternoon! 🌤️" : "Good evening! 🌙"}), el("p", {class: "lead", text: "Your wellness plan for today"}));
+  const prog = el("p", {style: "font-weight:600;margin:10px 0 0"}), bar = el("i"), mid = el("p", {class: "sub", role: "status", "aria-live": "polite"});
+  const refresh = () => { const n = done(); prog.textContent = "Today's progress: " + n + " of " + plan.length + " completed"; bar.style.width = (plan.length ? n / plan.length * 100 : 0) + "%";
+    mid.textContent = n ? "You completed " + n + " of your " + plan.length + " planned habits today. Every small step counts!" : "Start with just one. A small step is enough."; };
+  root.append(prog, el("div", {class: "prog"}, [bar]), mid);
+  SLOTS.forEach(s => {
+    const hs = plan.map(id => H.by[id]).filter(h => slotOf(h) === s); if (!hs.length) return;
+    root.append(el("div", {class: "slot", text: SLOTNAME[s]}));
+    hs.forEach(h => {
+      const key = d + "|" + h.id, row = el("div", {class: "habit", style: "--cc:" + CATS[h.category][2]});
+      const tick = el("button", {type: "button", class: "tick", role: "checkbox", "aria-checked": String(LOG.has(key)), "aria-label": "Mark " + h.title + " done", text: LOG.has(key) ? "✓" : ""});
+      row.classList.toggle("done", LOG.has(key));
+      tick.onclick = async () => {
+        const want = !LOG.has(key); want ? LOG.add(key) : LOG.delete(key);
+        tick.setAttribute("aria-checked", String(want)); tick.textContent = want ? "✓" : ""; row.classList.toggle("done", want); refresh();
+        const r = await api("toggle", {day: d, habit_id: h.id, done: want});
+        if (!r.ok) { want ? LOG.delete(key) : LOG.add(key); tick.setAttribute("aria-checked", String(!want)); tick.textContent = !want ? "✓" : ""; row.classList.toggle("done", !want); refresh(); note("Couldn't save that. " + r.message, false); }
+      };
+      const body = [el("h3", {text: h.title}), el("p", {class: "sub", text: h.minutes + " min"})];
+      if (P.level === "gentle" && h.gentle) body.push(el("p", {class: "sub", text: "Gentle option: " + h.gentle}));
+      body.push(el("details", {}, [el("summary", {text: "How to do it"}), el("p", {text: h.how}), h.gentle && P.level !== "gentle" ? el("p", {}, [el("strong", {text: "Gentler option: "}), h.gentle]) : ""]));
+      if (MIND[h.id]) body.push(el("div", {class: "acts"}, [el("a", {class: "linkbtn", href: "/mindful?tab=" + MIND[h.id], text: "Start now"})]));
+      row.append(tick, el("div", {}, body)); root.append(row);
+    });
+  });
+  refresh();
+  const days = Array.from({length: 7}, (_, i) => { const x = new Date(); x.setDate(x.getDate() - (6 - i)); return x; });
+  root.append(el("h2", {text: "This week"}), el("div", {class: "wk", role: "img", "aria-label": "Habits completed each day this week"}, days.map(x => { const k = iso(x), n = plan.filter(id => LOG.has(k + "|" + id)).length;
+    return el("div", {}, [el("i", {style: "height:" + Math.round((plan.length ? n / plan.length : 0) * 80) + "px"}), x.toLocaleDateString(undefined, {weekday: "narrow"}), el("br"), n + "/" + plan.length]); })),
+    el("p", {class: "sub", text: "Every day counts, and a missed day is just a missed day. There are no streaks to break."}));
+  root.append(msgBox, el("div", {class: "row"}, [
+    el("button", {class: "btn ghost", text: "Edit my plan", onclick: () => { ans = {goals: [...P.goals], minutes: P.minutes || 10, timing: P.timing || "flexible", level: P.level || "beginner"}; draft = [...P.habit_ids]; draftRoutine = P.routine_id; go("customize"); }}),
+    el("button", {class: "btn ghost", text: "Browse habits", onclick: () => { exploreCat = "all"; go("explore"); }}),
+    el("button", {class: "btn ghost", text: "Delete my data", onclick: async () => { if (!confirm("Delete your plan and progress? This can't be undone.")) return; const r = await api("delete"); if (r.ok) { P = null; LOG = new Set(); go("intro"); } else note(r.message, false); }})]), disclaimer());
+}
+
+const CATART = {yoga: "h-yoga", mind: "c-quiet", move: "h-walk", eat: "c-harvest", sleep: "h-sleep", indian: "h-yoga"};
+function explore() {
+  const pic = el("img", {class: "banner", alt: "", width: "800", height: "220", style: "height:150px"});
+  const setPic = () => { pic.src = "img/" + (CATART[exploreCat] || "c-quiet") + ".svg"; };
+  setPic();
+  root.append(pic, el("h1", {text: "Browse habits"}));
+  const bar = el("div", {class: "chips"}), list = el("div");
+  [["all", "All"], ...Object.entries(CATS).map(([k, v]) => [k, v[0]])].forEach(([k, n]) => { const b = el("button", {type: "button", class: "chip", style: "--cc:var(--acc)", "aria-pressed": String(exploreCat === k), text: n});
+    b.onclick = () => { exploreCat = k; setPic(); bar.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", String(x === b))); draw(); }; bar.append(b); });
+  const draw = () => { list.replaceChildren(); H.habits.filter(h => exploreCat === "all" || h.category === exploreCat).forEach(h => {
+    const inPlan = P && P.habit_ids.includes(h.id);
+    const add = el("button", {class: "linkbtn", text: inPlan ? "In your plan ✓" : "Add to my plan", onclick: async e => {
+      if (!P) return go("quiz"); if (inPlan) return; P.habit_ids.push(h.id); const r = await api("save", {goals: P.goals, minutes: P.minutes, timing: P.timing, level: P.level, routine_id: P.routine_id, habit_ids: P.habit_ids});
+      if (r.ok) { e.target.textContent = "In your plan ✓"; e.target.disabled = true; } else { P.habit_ids.pop(); note(r.message, false); } }});
+    list.append(el("div", {class: "item", style: "--cc:" + CATS[h.category][2]}, [el("div", {class: "meta", text: CATS[h.category][0] + " · " + h.minutes + " min"}), el("h3", {text: h.title}), el("p", {text: h.how}), h.gentle ? el("p", {class: "lesson"}, [el("strong", {text: "Gentler option: "}), h.gentle]) : "", el("div", {class: "acts"}, [add])])); }); };
+  root.append(bar, list, msgBox, el("div", {class: "row"}, [el("button", {class: "btn ghost", text: "Back", onclick: () => go(P ? "today" : "intro")})]), disclaimer()); draw();
+}
+
+(async () => {
+  root.append(el("p", {class: "sub", text: "Loading…"}));
+  try {
+    const [habits, rts, rh] = await Promise.all([rest("wellness_habits?select=*&order=sort"), rest("wellness_routines?select=*&order=sort"), rest("wellness_routine_habits?select=*&order=sort")]);
+    H = {habits, routines: rts, rh, by: Object.fromEntries(habits.map(h => [h.id, h]))};
+  } catch (e) { root.replaceChildren(el("p", {class: "msg bad", text: "Couldn't load Healthy Living. Check your connection and reload."})); return; }
+  const r = await api("get");
+  if (r.ok && r.profile && r.profile.habit_ids && r.profile.habit_ids.length) { P = r.profile; LOG = new Set(r.log.map(l => l.day + "|" + l.habit_id)); view = new URLSearchParams(location.search).get("view") === "browse" ? "intro" : "today"; }
+  render();
+})();
+</script>
+<script src="site.js"></script>
+</body></html>

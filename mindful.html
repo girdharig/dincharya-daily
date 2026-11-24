@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:wght@400;600&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<title>Mindful Moments · Dincharya</title>
+<meta name="description" content="A guided breathing pacer and meditation timer with a soft bell. Take a few quiet minutes, check in with how you feel, and keep a private journal.">
+<link rel="manifest" href="/manifest.webmanifest"><meta name="theme-color" content="#1E2340"><link rel="apple-touch-icon" href="/icons/apple-touch-icon.png"><meta property="og:type" content="website"><meta property="og:site_name" content="Dincharya"><meta property="og:title" content="Mindful Moments · Dincharya"><meta property="og:description" content="A guided breathing pacer and meditation timer with a soft bell. Take a few quiet minutes, check in with how you feel, and keep a private journal."><meta property="og:image" content="https://www.dincharya.co.in/icons/og.png"><meta property="og:url" content="https://www.dincharya.co.in/mindful"><meta name="twitter:card" content="summary_large_image"><link rel="canonical" href="https://www.dincharya.co.in/mindful"></head>
+<body data-page="mindful" data-cta="off">
+<main class="page" id="root"></main>
+<script src="config.js"></script><script src="common.js"></script>
+<script>
+const PATTERNS = {
+  calm: {name: "Calm", desc: "In for 4, out for 6. Longer out-breaths help you settle.", steps: [["Breathe in", 4, 1], ["Breathe out", 6, 0.55]]},
+  even: {name: "Even", desc: "In for 4, out for 4. Smooth and steady.", steps: [["Breathe in", 4, 1], ["Breathe out", 4, 0.55]]},
+  box:  {name: "Box", desc: "In 4, hold 4, out 4, hold 4. Skip the holds if they feel uncomfortable.", steps: [["Breathe in", 4, 1], ["Hold", 4, 1], ["Breathe out", 4, 0.55], ["Hold", 4, 0.55]]}};
+const MOODS = [[1, "😣", "Restless"], [2, "😕", "Low"], [3, "😐", "Okay"], [4, "🙂", "Good"], [5, "😌", "Calm"]];
+const reduced = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+const root = document.getElementById("root");
+let token = ""; try { token = localStorage.getItem("dina_wtoken") || ""; } catch (e) {}
+if (!/^[0-9a-f]{32,64}$/.test(token)) { token = [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, "0")).join(""); try { localStorage.setItem("dina_wtoken", token); } catch (e) {} }
+const api = (action, body = {}) => fn("mindful", {token, action, ...body});
+const S = {tab: "breathe", phase: "setup", pattern: "calm", bMin: 3, mMin: 10, sound: true, vib: false, interval: 0, done: null};
+const qtab = new URLSearchParams(location.search).get("tab"); if (["breathe", "meditate", "journal"].includes(qtab)) S.tab = qtab;
+let run = null, wl = null, ac = null;
+
+// ---- pure helpers (tested) ----
+function buildSchedule(steps, totalMs) {
+  const out = []; let t = 0, i = 0;
+  while (t < totalMs) { const [label, secs, scale] = steps[i % steps.length]; out.push({label, start: t, ms: secs * 1000, scale}); t += secs * 1000; i++; }
+  return out;
+}
+const scheduleEnd = sch => sch.length ? sch[sch.length - 1].start + sch[sch.length - 1].ms : 0;
+function bellTimes(totalMs, everyMin) { const out = []; if (!everyMin) return out; for (let t = everyMin * 60000; t < totalMs - 1000; t += everyMin * 60000) out.push(t); return out; }
+const clock = ms => { const s = Math.max(0, Math.ceil(ms / 1000)); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); };
+
+// ---- sound, wake lock ----
+function bell(vol = 0.22) {
+  if (!S.sound) return;
+  try {
+    ac = ac || new (window.AudioContext || window.webkitAudioContext)(); const t = ac.currentTime;
+    [[528, 1], [792, 0.45], [1056, 0.2]].forEach(([f, g]) => { const o = ac.createOscillator(), gn = ac.createGain(); o.type = "sine"; o.frequency.value = f;
+      gn.gain.setValueAtTime(0, t); gn.gain.linearRampToValueAtTime(vol * g, t + 0.02); gn.gain.exponentialRampToValueAtTime(0.0001, t + 4); o.connect(gn); gn.connect(ac.destination); o.start(t); o.stop(t + 4.2); });
+  } catch (e) { /* sound is optional */ }
+}
+async function keepAwake() { try { if ("wakeLock" in navigator) wl = await navigator.wakeLock.request("screen"); } catch (e) {} }
+function release() { try { if (wl) wl.release(); } catch (e) {} wl = null; }
+
+// ---- running a session ----
+function endRun() { if (run) { run.timers.forEach(clearTimeout); clearInterval(run.tick); run = null; } release(); }
+function begin(kind) {
+  endRun(); S.phase = "running"; render();
+  const startAt = Date.now(); let refs = S.refs;
+  const sch = kind === "breath" ? buildSchedule(PATTERNS[S.pattern].steps, S.bMin * 60000) : null;
+  const total = kind === "breath" ? scheduleEnd(sch) : S.mMin * 60000, endAt = startAt + total, timers = [];
+  run = {kind, startAt, timers, total};
+  bell(0.15); keepAwake();
+  if (sch) sch.forEach(p => timers.push(setTimeout(() => {
+    refs.label.textContent = p.label; refs.orb.setAttribute("data-phase", p.label);
+    if (!reduced) { refs.orb.style.transition = "transform " + p.ms / 1000 + "s ease-in-out"; refs.orb.style.transform = "scale(" + p.scale + ")"; }
+    if (S.vib && navigator.vibrate) navigator.vibrate(20);
+  }, p.start)));
+  else bellTimes(total, S.interval).forEach(t => timers.push(setTimeout(() => bell(0.12), t)));
+  timers.push(setTimeout(() => finish(kind, Math.round(total / 60000) || 1, true), total));
+  run.tick = setInterval(() => { refs.remain.textContent = clock(endAt - Date.now()); }, 250);
+  refs.remain.textContent = clock(total);
+}
+function finish(kind, minutes, bellOn) { endRun(); if (bellOn) bell(); S.done = {kind, minutes}; S.phase = "reflect"; render(); }
+function stopEarly() {
+  const elapsed = run ? Date.now() - run.startAt : 0, kind = run ? run.kind : "breath"; endRun();
+  if (elapsed >= 60000) { S.done = {kind, minutes: Math.max(1, Math.round(elapsed / 60000))}; S.phase = "reflect"; } else S.phase = "setup";
+  render();
+}
+
+// ---- screens ----
+function chipRow(options, get, set) {
+  const box = el("div", {class: "chips", role: "group"});
+  options.forEach(([k, label]) => { const b = el("button", {type: "button", class: "chip", style: "--cc:var(--acc)", "aria-pressed": String(get() === k), text: label});
+    b.onclick = () => { set(k); box.querySelectorAll("button").forEach((x, i) => x.setAttribute("aria-pressed", String(get() === options[i][0]))); }; box.append(b); });
+  return box;
+}
+const soundToggle = () => { const c = el("input", {type: "checkbox", id: "snd", style: "width:auto"}); c.checked = S.sound; c.onchange = () => { S.sound = c.checked; }; return el("label", {class: "check", for: "snd"}, [c, el("span", {text: "Play a soft bell"})]); };
+const disclaimer = () => el("div", {class: "disc"}, [el("strong", {text: "General relaxation, not medical advice. "}), "Don't practise breathing exercises while driving or in water. Stop if you feel dizzy or unwell, and follow your doctor's advice if you have a heart, lung or other medical condition. Holds are always optional."]);
+
+function render() {
+  endIfIdle(); root.replaceChildren();
+  root.append(el("img", {class: "banner", src: "img/c-quiet.svg", alt: "", width: "800", height: "220", style: "height:140px"}), el("h1", {text: "Mindful Moments"}));
+  if (S.phase === "running") return running();
+  if (S.phase === "reflect") return reflect();
+  root.append(el("p", {class: "lead", text: "A few quiet minutes, whenever you need them."}));
+  const tabs = el("div", {class: "chips", role: "tablist"});
+  [["breathe", "Breathe"], ["meditate", "Meditate"], ["journal", "My journal"]].forEach(([k, n]) => tabs.append(el("button", {type: "button", class: "chip", role: "tab", style: "--cc:var(--acc)", "aria-pressed": String(S.tab === k), text: n, onclick: () => { S.tab = k; render(); }})));
+  root.append(tabs);
+  ({breathe: breatheSetup, meditate: meditateSetup, journal: journal})[S.tab]();
+}
+function endIfIdle() { if (S.phase !== "running") endRun(); }
+function breatheSetup() {
+  root.append(el("h2", {text: "Breathing pacer"}), el("p", {class: "q", text: "Pattern"}), chipRow(Object.entries(PATTERNS).map(([k, v]) => [k, v.name]), () => S.pattern, k => { S.pattern = k; desc.textContent = PATTERNS[k].desc; }));
+  const desc = el("p", {class: "hint", text: PATTERNS[S.pattern].desc}); root.append(desc,
+    el("p", {class: "q", text: "How long?"}), chipRow([[1, "1 minute"], [3, "3 minutes"], [5, "5 minutes"]], () => S.bMin, k => S.bMin = k), soundToggle(),
+    el("button", {class: "btn", text: "Start breathing", onclick: () => begin("breath")}), disclaimer());
+}
+function meditateSetup() {
+  root.append(el("h2", {text: "Meditation timer"}), el("p", {class: "sub", text: "Sit comfortably, close your eyes and follow your breath. A bell marks the start and the end."}),
+    el("p", {class: "q", text: "How long?"}), chipRow([[5, "5 min"], [10, "10 min"], [15, "15 min"], [20, "20 min"]], () => S.mMin, k => S.mMin = k),
+    el("p", {class: "q", text: "Gentle bell during the session"}), chipRow([[0, "None"], [5, "Every 5 min"]], () => S.interval, k => S.interval = k), soundToggle(),
+    el("button", {class: "btn", text: "Start meditation", onclick: () => begin("meditate")}), disclaimer());
+}
+function running() {
+  const breath = run && run.kind === "breath" || (!run && S.tab === "breathe");
+  const label = el("div", {class: "orb-label", "aria-live": "polite", text: breath ? "Get ready" : "Settle in"}), remain = el("p", {class: "orb-time", "aria-label": "Time left"});
+  const orb = el("div", {class: "orb" + (breath ? "" : " still"), style: breath && !reduced ? "transform:scale(.55)" : ""}, [label]);
+  S.refs = {label, orb, remain};
+  root.append(el("div", {class: "orb-wrap"}, [orb]), remain, el("p", {class: "sub", style: "text-align:center", text: breath ? "Follow the circle. Breathe gently through your nose." : "Rest your attention on your breath. If your mind wanders, gently return."}),
+    el("div", {class: "row", style: "justify-content:center"}, [el("button", {class: "btn ghost", text: "Stop", onclick: stopEarly})]));
+}
+function reflect() {
+  const d = S.done, state = {mood: null}; const msg = el("p", {class: "msg", role: "status"});
+  const note = el("textarea", {maxlength: "280", style: "min-height:90px", placeholder: "One line about how it went (optional)"});
+  root.append(el("h2", {text: "Well done"}), el("p", {class: "lead", text: d.minutes + (d.minutes === 1 ? " minute" : " minutes") + " of " + (d.kind === "breath" ? "breathing" : "meditation") + "."}),
+    el("p", {class: "q", text: "How do you feel?"}), chipRow(MOODS.map(([n, e, l]) => [n, e + " " + l]), () => state.mood, k => state.mood = k),
+    el("label", {for: "n", text: "Note (optional, private)"}), note);
+  note.id = "n";
+  const save = el("button", {class: "btn", text: "Save to my journal"});
+  save.onclick = async () => { save.disabled = true; const r = await api("save", {kind: d.kind, minutes: d.minutes, day: iso(new Date()), mood: state.mood, note: note.value});
+    if (!r.ok) { save.disabled = false; msg.className = "msg bad"; msg.textContent = r.message; return; }
+    msg.className = "msg ok"; msg.textContent = "Saved." + (r.ticked && r.ticked.length ? " Ticked “" + r.ticked.join("” and “") + "” in your Healthy Living plan." : "");
+    save.hidden = true; skip.textContent = "Done"; };
+  const skip = el("button", {class: "btn ghost", text: "Skip", onclick: () => { S.phase = "setup"; S.done = null; render(); }});
+  root.append(el("div", {class: "row"}, [save, skip]), msg);
+}
+async function journal() {
+  root.append(el("h2", {text: "My journal"}), el("p", {class: "sub", text: "Only you can see this. It's linked to a random code on your device, not to your name or email."}));
+  const box = el("div", {}, [el("p", {class: "sub", text: "Loading…"})]); root.append(box);
+  const r = await api("list"); box.replaceChildren();
+  if (!r.ok) return box.append(el("p", {class: "msg bad", text: r.message}));
+  box.append(el("div", {class: "stats"}, [el("div", {class: "stat"}, [el("b", {text: String(r.week_minutes)}), el("span", {text: "minutes this week"})]), el("div", {class: "stat"}, [el("b", {text: String(r.total)}), el("span", {text: "sessions in 30 days"})])]));
+  if (!r.sessions.length) box.append(el("p", {text: "No sessions yet. Try a 3-minute breathing session."}));
+  r.sessions.forEach(s => { const m = MOODS.find(x => x[0] === s.mood);
+    const del = el("button", {class: "linkbtn", text: "Delete", "aria-label": "Delete this entry", onclick: async () => { const u = await api("delete_session", {id: s.id}); if (u.ok) render(); }});
+    box.append(el("div", {class: "item", style: "--cc:var(--acc)"}, [el("div", {class: "meta", text: new Date(s.day + "T00:00").toLocaleDateString(undefined, {weekday: "short", day: "numeric", month: "short"}) + " · " + (s.kind === "breath" ? "Breathing" : "Meditation") + " · " + s.minutes + " min"}),
+      el("h3", {text: m ? m[1] + " " + m[2] : "No mood noted"}), s.note ? el("p", {text: s.note}) : "", el("div", {class: "acts"}, [del])])); });
+  box.append(el("p", {class: "sub"}, ["To delete everything, use “Delete my data” on the ", el("a", {href: "/healthy", text: "Healthy Living page"}), "."]));
+}
+window.addEventListener("pagehide", endRun);
+render();
+</script>
+<script src="site.js"></script>
+</body></html>

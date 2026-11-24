@@ -1,0 +1,47 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><link rel="icon" href="favicon.svg" type="image/svg+xml"><link href="https://fonts.googleapis.com/css2?family=Newsreader:wght@400;600&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet"><link rel="stylesheet" href="style.css"><title>Feedback and suggestions · Dincharya</title><link rel="manifest" href="/manifest.webmanifest"><meta name="theme-color" content="#1E2340"><link rel="apple-touch-icon" href="/icons/apple-touch-icon.png"><meta property="og:type" content="website"><meta property="og:site_name" content="Dincharya"><meta property="og:title" content="Feedback and suggestions · Dincharya"><meta property="og:description" content="Festivals, fasts, rituals, practices and stories for the traditions you follow, by email and WhatsApp."><meta property="og:image" content="https://www.dincharya.co.in/icons/og.png"><meta property="og:url" content="https://www.dincharya.co.in/feedback"><meta name="twitter:card" content="summary_large_image"><link rel="canonical" href="https://www.dincharya.co.in/feedback"><meta name="description" content="Festivals, fasts, rituals, practices and stories for the traditions you follow, by email and WhatsApp."></head><body data-page="feedback">
+<main class="page">
+
+<img class="banner" src="img/h-river.svg" alt="" width="800" height="220">
+<h1>Tell us what you think</h1>
+<p class="lead">Feedback, ideas, problems and complaints are all welcome. They are how Dincharya gets better, and we read every message.</p>
+<div class="promise"><strong>You might tell us:</strong>
+<ul style="margin:6px 0 0"><li>A date or description looks wrong for your community</li><li>A tradition, festival, region or language you'd like added</li><li>Something isn't working, or an email or WhatsApp message didn't arrive</li><li>What you love, or what you'd change</li></ul></div>
+<form id="f" novalidate>
+  <label id="kl">What kind of message is this?</label>
+  <div class="kinds" role="group" aria-labelledby="kl" id="kinds"></div>
+  <label for="msg">Your message</label>
+  <textarea id="msg" maxlength="4000" placeholder="Tell us what happened or what you'd like to see" required></textarea>
+  <div class="count"><span id="n">0</span> / 4000</div>
+  <label for="nm">Your name (optional)</label>
+  <input id="nm" type="text" maxlength="100" autocomplete="name">
+  <label for="em">Your email (optional, only if you'd like a reply)</label>
+  <input id="em" type="email" maxlength="254" autocomplete="email" placeholder="you@example.com">
+  <div class="hp"><input id="hp" type="text" tabindex="-1" autocomplete="off" aria-hidden="true"></div>
+  <button class="btn" id="send" type="button">Send message</button>
+  <p class="msg" id="out" role="status"></p>
+</form>
+<div class="promise"><strong>What happens next:</strong> your message goes to the person who runs Dincharya. Issues and complaints are looked at first. We only use your email to reply, and we never share it. See <a href="/privacy">privacy</a>.</div>
+
+</main>
+<script src="config.js"></script><script src="common.js"></script><script>
+const KINDS = [["feedback","Feedback","#1F6F78"],["suggestion","Suggestion","#C98A0B"],["issue","Report an issue","#3C6FD1"],["complaint","Complaint","#C23B6B"]];
+let kind = new URLSearchParams(location.search).get("kind"); if (!KINDS.some(k => k[0] === kind)) kind = "feedback";
+const box = document.getElementById("kinds");
+KINDS.forEach(([k, n, c]) => {
+  const b = el("button", {type: "button", class: "chip", style: "--cc:" + c, "aria-pressed": String(k === kind)}, [el("i"), n]);
+  b.onclick = () => { kind = k; box.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", String(x === b))); };
+  box.append(b);
+});
+const msg = document.getElementById("msg"), n = document.getElementById("n"), out = document.getElementById("out"), send = document.getElementById("send");
+msg.oninput = () => n.textContent = msg.value.length;
+send.onclick = async () => {
+  out.className = "msg"; out.textContent = "";
+  if (msg.value.trim().length < 5) { out.className = "msg bad"; out.textContent = "Please write a little more so we can understand."; return; }
+  let from = ""; try { from = new URL(document.referrer).pathname; } catch {}
+  send.disabled = true; send.textContent = "Sending…";
+  const r = await fn("feedback", {kind, message: msg.value, name: document.getElementById("nm").value, email: document.getElementById("em").value, page: from, website: document.getElementById("hp").value});
+  send.disabled = false; send.textContent = "Send message";
+  out.className = "msg " + (r.ok ? "ok" : "bad"); out.textContent = r.message;
+  if (r.ok) { msg.value = ""; n.textContent = "0"; }
+};
+</script><script src="site.js"></script></body></html>

@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<title>Admin · Dincharya</title>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:wght@400;600&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<meta name="theme-color" content="#1E2340"><link rel="apple-touch-icon" href="/icons/apple-touch-icon.png"></head>
+<body data-page="admin" data-chrome="off">
+<main class="adm" id="root"></main>
+<script src="config.js"></script>
+<script src="common.js"></script>
+<script>
+const NS = "http://www.w3.org/2000/svg";
+const A = {token: ""};
+try { A.token = sessionStorage.getItem("adm") || ""; } catch {}
+const root = document.getElementById("root");
+const STATUS_COLOR = {active: "#1E8E5A", pending: "#C98A0B", unsubscribed: "#8A8FA8", new: "#C23B6B", in_progress: "#3C6FD1", resolved: "#1E8E5A", dismissed: "#8A8FA8", none: "#8A8FA8", stopped: "#B3261E"};
+const pill = t => el("span", {class: "pill-s", style: "--cc:" + (STATUS_COLOR[t] || "#8A8FA8"), text: String(t).replace("_", " ")});
+const fmtDate = s => s ? new Date(s).toLocaleString(undefined, {dateStyle: "medium", timeStyle: "short"}) : "never";
+const fmtDay = s => new Date(s + "T00:00").toLocaleDateString(undefined, {month: "short", day: "numeric"});
+const flash = (m, ok = true) => { const f = document.getElementById("flash"); if (f) { f.className = "msg " + (ok ? "ok" : "bad"); f.textContent = m; } };
+
+async function api(action, body = {}) {
+  const r = await fn("admin", {action, token: A.token, ...body});
+  if (r.expired) signOut(r.message);
+  return r;
+}
+function signOut(note) { A.token = ""; try { sessionStorage.removeItem("adm"); } catch {} login(note); }
+
+function login(note) {
+  root.replaceChildren();
+  const pw = el("input", {type: "password", id: "pw", autocomplete: "current-password", placeholder: "Admin password"});
+  const msg = el("p", {class: "msg bad", role: "status", text: note || ""});
+  const go = el("button", {class: "btn", text: "Sign in"});
+  const submit = async () => {
+    go.disabled = true; const r = await fn("admin", {action: "login", password: pw.value}); go.disabled = false;
+    if (!r.ok) { msg.textContent = r.message; return; }
+    A.token = r.token; try { sessionStorage.setItem("adm", r.token); } catch {} shell("overview");
+  };
+  go.onclick = submit; pw.onkeydown = e => { if (e.key === "Enter") submit(); };
+  root.append(el("div", {style: "max-width:380px;margin:60px auto"}, [el("h1", {text: "Dincharya admin"}), el("p", {class: "sub", text: "Sign in to see subscribers, visits and feedback."}),
+    el("label", {for: "pw", text: "Password"}), pw, go, msg]));
+  pw.focus();
+}
+
+const TABS = [["overview", "Overview"], ["subscribers", "Subscribers"], ["feedback", "Feedback"], ["visits", "Visits"], ["content", "Content"], ["settings", "Settings"]];
+function shell(tab) {
+  root.replaceChildren(el("h1", {text: "Dincharya admin"}));
+  const tabs = el("div", {class: "tabs", role: "tablist"});
+  TABS.forEach(([k, n]) => tabs.append(el("button", {role: "tab", "aria-selected": String(k === tab), text: n, onclick: () => shell(k)})));
+  const body = el("div", {id: "body"});
+  root.append(tabs, el("p", {id: "flash", class: "msg", role: "status"}), body);
+  ({overview, subscribers, feedback, visits, content, settings})[tab](body);
+}
+function pager(page, size, total, go) {
+  const last = Math.max(0, Math.ceil(total / size) - 1);
+  return el("div", {class: "row2"}, [
+    el("button", {class: "btn ghost sm", text: "Previous", disabled: page <= 0 ? "" : null, onclick: () => go(page - 1)}),
+    el("span", {class: "sub", text: total ? `${page * size + 1}–${Math.min(total, page * size + size)} of ${total}` : "No results"}),
+    el("button", {class: "btn ghost sm", text: "Next", disabled: page >= last ? "" : null, onclick: () => go(page + 1)})]);
+}
+function chart(days, a, b) {
+  const W = 600, H = 140, P = 16, n = Math.max(1, days.length), max = Math.max(1, ...a, ...b), bw = (W - 2 * P) / n;
+  const svg = document.createElementNS(NS, "svg"); svg.setAttribute("viewBox", `0 0 ${W} ${H}`); svg.setAttribute("class", "chart"); svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", "Bar chart by day");
+  days.forEach((d, i) => {
+    [[a[i], ""], [b[i], "b"]].forEach(([v, cls], j) => {
+      const h = Math.round((v / max) * (H - 38)), r = document.createElementNS(NS, "rect");
+      r.setAttribute("x", P + i * bw + j * (bw * 0.4) + bw * 0.1); r.setAttribute("width", bw * 0.38); r.setAttribute("y", H - 22 - h); r.setAttribute("height", Math.max(h, v ? 2 : 0));
+      if (cls) r.setAttribute("class", cls); const t = document.createElementNS(NS, "title"); t.textContent = `${fmtDay(d)}: ${v}`; r.append(t); svg.append(r);
+    });
+  });
+  [[0, "start"], [n - 1, "end"]].forEach(([i, anchor]) => { if (!days[i]) return; const t = document.createElementNS(NS, "text"); t.setAttribute("x", anchor === "start" ? P : W - P); t.setAttribute("y", H - 6); t.setAttribute("text-anchor", anchor); t.textContent = fmtDay(days[i]); svg.append(t); });
+  return svg;
+}
+function bars(obj, colors = {}) {
+  const max = Math.max(1, ...Object.values(obj)); const box = el("div");
+  Object.entries(obj).sort((x, y) => y[1] - x[1]).forEach(([k, v]) => box.append(el("div", {class: "bar", style: "--cc:" + (colors[k] || "var(--acc)")}, [el("span", {text: NAMES[k] || k}), el("i", {style: `width:${Math.max(2, (v / max) * 100)}%`}), el("span", {text: String(v)})])));
+  if (!Object.keys(obj).length) box.append(el("p", {class: "sub", text: "Nothing yet."}));
+  return box;
+}
+const stat = (n, label) => el("div", {class: "stat"}, [el("b", {text: String(n ?? 0)}), el("span", {text: label})]);
+const lastNDays = n => Array.from({length: n}, (_, i) => { const d = new Date(); d.setDate(d.getDate() - (n - 1 - i)); return iso(d); });
+
+async function overview(body) {
+  body.append(el("p", {class: "sub", text: "Loading…"}));
+  const [o, v] = await Promise.all([api("overview"), api("visits", {days: 7})]);
+  body.replaceChildren(); if (!o.ok) return flash(o.message, false);
+  const d = o.data, s = d.subscribers, st = s.by_status || {}, fb = d.feedback.by_status || {};
+  body.append(el("div", {class: "stats"}, [stat(s.total, "Subscribers"), stat(st.active, "Active"), stat(st.pending, "Waiting to confirm"), stat(st.unsubscribed, "Unsubscribed"),
+    stat(s.new_7d, "New this week"), stat(s.whatsapp.active, "WhatsApp active"), stat(s.whatsapp.pending, "WhatsApp unverified"), stat(fb.new, "New feedback"),
+    stat(v.ok ? v.data.views : 0, "Page views (7 days)"), stat(v.ok ? v.data.visitors : 0, "Visitors (7 days)")]));
+  const days = lastNDays(14), em = {}, wa = {}; (d.sends.email_14d || []).forEach(x => em[x.day] = x.n); (d.sends.whatsapp_14d || []).forEach(x => wa[x.day] = x.n);
+  body.append(el("h2", {text: "Messages sent, last 14 days"}), el("div", {class: "panel"}, [chart(days, days.map(x => em[x] || 0), days.map(x => wa[x] || 0)),
+    el("p", {class: "sub", text: `Blue-green: emails. Gold: WhatsApp. Last email ${fmtDate(d.sends.last_email_at)}. Last WhatsApp ${fmtDate(d.sends.last_whatsapp_at)}.`})]));
+  body.append(el("h2", {text: "Active subscribers by tradition"}), el("div", {class: "panel"}, [bars(s.by_culture, COLORS)]));
+  const lastDay = d.content.last_dated_day, daysLeft = lastDay ? Math.round((new Date(lastDay) - new Date()) / 864e5) : 0;
+  const warn = daysLeft < 30 ? el("p", {class: "msg bad", text: `Dated events only run until ${lastDay}. Add more soon so the Upcoming tab and emails stay full.`}) : el("p", {class: "sub", text: `Dated events run until ${lastDay} (${daysLeft} days ahead).`});
+  body.append(el("h2", {text: "Content"}), el("div", {class: "panel"}, [el("p", {text: `${d.content.events_reviewed} events visible, ${d.content.events_unreviewed} hidden, ${d.content.stories} stories. ${d.content.dated_events_next_90d} dated events in the next 90 days.`}), warn]));
+  body.append(el("h2", {text: "Feedback"}), el("div", {class: "panel"}, [bars(d.feedback.by_kind), el("p", {class: "sub", text: `New ${fb.new || 0} · In progress ${fb.in_progress || 0} · Resolved ${fb.resolved || 0}`})]));
+  const need = [["APP_URL", "Links in emails and redirects"], ["RESEND_API_KEY", "Sending email"], ["CRON_SECRET", "Scheduled digest and 'Send now'"], ["WA_TOKEN", "WhatsApp: access token"], ["WA_PHONE_NUMBER_ID", "WhatsApp: phone number"], ["WA_APP_SECRET", "WhatsApp: STOP replies"], ["WA_VERIFY_TOKEN", "WhatsApp: webhook setup"]];
+  body.append(el("h2", {text: "System checks"}), el("div", {class: "panel"}, need.map(([k, why]) => el("p", {style: "margin:4px 0"}, [el("span", {class: o.health[k] ? "ok-dot" : "bad-dot"}), el("strong", {text: k}), " — " + (o.health[k] ? "set" : "missing") + ". " + why]))));
+  const out = el("p", {class: "sub"});
+  body.append(el("h2", {text: "Controls"}), el("div", {class: "panel"}, [el("p", {class: "sub", text: "Runs today's send for everyone whose time has passed. People already sent today are skipped."}),
+    el("button", {class: "btn", text: "Send today's digest now", onclick: async e => { if (!confirm("Send the digest to everyone due now?")) return; e.target.disabled = true; const r = await api("send_digest_now"); e.target.disabled = false; out.textContent = r.ok ? `Done. Emails ${r.result.sent}, WhatsApp ${r.result.waSent ?? 0}, skipped ${r.result.skipped}, failed ${r.result.failed}.` : r.message; }}), out]));
+}
+
+async function subscribers(body, page = 0, q = "", status = "") {
+  const size = 25;
+  const qi = el("input", {type: "search", placeholder: "Search email or phone", value: q, "aria-label": "Search"});
+  const ss = el("select", {"aria-label": "Status"}, [["", "All statuses"], ["active", "Active"], ["pending", "Pending"], ["unsubscribed", "Unsubscribed"]].map(([v, t]) => el("option", {value: v, text: t})));
+  ss.value = status;
+  const reload = (p = 0) => { body.replaceChildren(); subscribers(body, p, qi.value, ss.value); };
+  qi.onkeydown = e => { if (e.key === "Enter") reload(); }; ss.onchange = () => reload();
+  const exp = el("button", {class: "btn ghost sm", text: "Export CSV", onclick: async () => {
+    const r = await api("export_subscribers"); if (!r.ok) return flash(r.message, false);
+    const cols = ["email", "cultures", "status", "timezone", "send_time", "phone", "whatsapp_status", "created_at"], esc = v => '"' + String(Array.isArray(v) ? v.join(" ") : v ?? "").replace(/"/g, '""') + '"';
+    const csv = [cols.join(",")].concat(r.rows.map(x => cols.map(c => esc(x[c])).join(","))).join("\n");
+    const a = el("a", {href: URL.createObjectURL(new Blob([csv], {type: "text/csv"})), download: "subscribers-" + iso(new Date()) + ".csv"}); document.body.append(a); a.click(); a.remove(); }});
+  body.append(el("div", {class: "row2"}, [qi, ss, el("button", {class: "btn sm", text: "Search", onclick: () => reload()}), exp]));
+  const r = await api("subscribers", {page, pageSize: size, q: qi.value, status: ss.value}); if (!r.ok) return flash(r.message, false);
+  const rows = r.rows.map(x => el("tr", {}, [el("td", {text: x.email}), el("td", {text: x.cultures.map(c => NAMES[c] || c).join(", ")}), el("td", {}, [pill(x.status)]),
+    el("td", {}, x.phone ? [el("div", {text: x.phone}), pill(x.whatsapp_status)] : [el("span", {class: "sub", text: "—"})]), el("td", {text: (x.send_time || "").slice(0, 5) + " " + x.timezone}), el("td", {text: fmtDate(x.created_at)}),
+    el("td", {}, [el("div", {class: "row2"}, [
+      x.status === "unsubscribed" ? el("button", {class: "btn ghost sm", text: "Reactivate", onclick: async () => { const u = await api("set_subscriber_status", {id: x.id, status: "active"}); flash(u.message, u.ok); reload(page); }}) : el("button", {class: "btn ghost sm", text: "Unsubscribe", onclick: async () => { if (!confirm("Unsubscribe " + x.email + "?")) return; const u = await api("set_subscriber_status", {id: x.id, status: "unsubscribed"}); flash(u.message, u.ok); reload(page); }}),
+      el("button", {class: "btn danger sm", text: "Delete", onclick: async () => { if (!confirm("Permanently delete " + x.email + " and their history?")) return; const u = await api("delete_subscriber", {id: x.id}); flash(u.message, u.ok); reload(page); }})])])]));
+  body.append(el("div", {class: "scroll"}, [el("table", {class: "tbl"}, [el("thead", {}, [el("tr", {}, ["Email", "Traditions", "Status", "WhatsApp", "Send time", "Joined", ""].map(h => el("th", {text: h})))]), el("tbody", {}, rows)])]), pager(page, size, r.total, reload));
+}
+
+async function feedback(body, page = 0, status = "", kind = "") {
+  const size = 20;
+  const fs = el("select", {"aria-label": "Status"}, [["", "All statuses"], ["new", "New"], ["in_progress", "In progress"], ["resolved", "Resolved"], ["dismissed", "Dismissed"]].map(([v, t]) => el("option", {value: v, text: t})));
+  const fk = el("select", {"aria-label": "Type"}, [["", "All types"], ["feedback", "Feedback"], ["suggestion", "Suggestions"], ["issue", "Issues"], ["complaint", "Complaints"]].map(([v, t]) => el("option", {value: v, text: t})));
+  fs.value = status; fk.value = kind;
+  const reload = (p = 0) => { body.replaceChildren(); feedback(body, p, fs.value, fk.value); };
+  fs.onchange = fk.onchange = () => reload();
+  body.append(el("div", {class: "row2"}, [fs, fk]));
+  const r = await api("feedback_list", {page, pageSize: size, status: fs.value, kind: fk.value}); if (!r.ok) return flash(r.message, false);
+  if (!r.rows.length) body.append(el("p", {text: "No messages here yet."}));
+  r.rows.forEach(x => {
+    const st = el("select", {"aria-label": "Status"}, ["new", "in_progress", "resolved", "dismissed"].map(v => el("option", {value: v, text: v.replace("_", " ")}))); st.value = x.status;
+    const note = el("textarea", {style: "min-height:60px", placeholder: "Private note (only you see this)"}); note.value = x.admin_note || "";
+    const kc = {feedback: "#1F6F78", suggestion: "#C98A0B", issue: "#3C6FD1", complaint: "#C23B6B"}[x.kind];
+    body.append(el("div", {class: "panel fb", style: "--cc:" + kc}, [
+      el("div", {class: "row2"}, [el("span", {class: "pill-s", style: "--cc:" + kc, text: x.kind}), pill(x.status), el("span", {class: "sub", text: fmtDate(x.created_at)})]),
+      el("p", {style: "white-space:pre-wrap;margin:8px 0", text: x.message}),
+      el("p", {class: "sub", text: [x.name, x.email, x.page ? "from " + x.page : ""].filter(Boolean).join(" · ") || "Anonymous"}),
+      x.email ? el("a", {href: "mailto:" + x.email + "?subject=" + encodeURIComponent("Re: your " + x.kind + " about Dincharya"), text: "Reply by email"}) : "",
+      el("div", {class: "row2"}, [st, el("button", {class: "btn sm", text: "Save", onclick: async () => { const u = await api("feedback_update", {id: x.id, status: st.value, admin_note: note.value}); flash(u.message, u.ok); }}),
+        el("button", {class: "btn danger sm", text: "Delete", onclick: async () => { if (!confirm("Delete this message?")) return; const u = await api("feedback_delete", {id: x.id}); flash(u.message, u.ok); reload(page); }})]), note]));
+  });
+  body.append(pager(page, size, r.total, reload));
+}
+
+async function visits(body, days = 30) {
+  const sel = el("select", {"aria-label": "Range"}, [[7, "Last 7 days"], [30, "Last 30 days"], [90, "Last 90 days"]].map(([v, t]) => el("option", {value: v, text: t}))); sel.value = days;
+  sel.onchange = () => { body.replaceChildren(); visits(body, Number(sel.value)); };
+  body.append(el("div", {class: "row2"}, [sel]));
+  const r = await api("visits", {days}); if (!r.ok) return flash(r.message, false);
+  const d = r.data; body.append(el("div", {class: "stats"}, [stat(d.views, "Page views"), stat(d.visitors, "Visitor-days"), stat(d.devices.mobile || 0, "Mobile views"), stat(d.devices.desktop || 0, "Desktop views")]));
+  const dd = lastNDays(Math.min(days, 90)), m = {}; d.daily.forEach(x => m[x.day] = x);
+  body.append(el("h2", {text: "Per day"}), el("div", {class: "panel"}, [chart(dd, dd.map(x => (m[x] || {}).views || 0), dd.map(x => (m[x] || {}).visitors || 0)), el("p", {class: "sub", text: "Blue-green: page views. Gold: visitors (counted once per day, so a returning person counts again on another day)."})]));
+  const list = (title, rows, a, b) => body.append(el("h2", {text: title}), el("div", {class: "panel"}, rows.length ? rows.map(x => el("div", {class: "bar"}, [el("span", {style: "width:200px", text: x[a]}), el("span", {text: String(x[b])})])) : [el("p", {class: "sub", text: "Nothing yet."})]));
+  list("Top pages", d.top_pages, "path", "views"); list("Where visitors came from", d.top_referrers, "referrer", "views"); list("Time zones (rough location)", d.timezones, "tz", "visitors");
+  body.append(el("div", {class: "panel"}, [el("p", {class: "sub", text: "Visits are anonymous. Delete old rows to keep the database small."}), el("button", {class: "btn ghost sm", text: "Delete visits older than 90 days", onclick: async () => { if (!confirm("Delete visit records older than 90 days?")) return; const u = await api("purge_visits", {days: 90}); flash(u.message, u.ok); }})]));
+}
+
+async function content(body, page = 0, culture = "", q = "", reviewed = "") {
+  const size = 25;
+  const cs = el("select", {"aria-label": "Tradition"}, [el("option", {value: "", text: "All traditions"})].concat(Object.keys(NAMES).map(k => el("option", {value: k, text: NAMES[k]}))));
+  const rs = el("select", {"aria-label": "Visibility"}, [["", "Visible and hidden"], ["true", "Visible only"], ["false", "Hidden only"]].map(([v, t]) => el("option", {value: v, text: t})));
+  const qi = el("input", {type: "search", placeholder: "Search title", value: q});
+  cs.value = culture; rs.value = reviewed;
+  const reload = (p = 0) => { body.replaceChildren(); content(body, p, cs.value, qi.value, rs.value); };
+  cs.onchange = rs.onchange = () => reload(); qi.onkeydown = e => { if (e.key === "Enter") reload(); };
+  body.append(el("p", {class: "sub", text: "Only visible (reviewed) entries appear in the app, emails and WhatsApp. Hide anything you haven't verified."}), el("div", {class: "row2"}, [cs, rs, qi]));
+  const r = await api("events_list", {page, pageSize: size, culture: cs.value, q: qi.value, reviewed: rs.value === "" ? null : rs.value === "true"}); if (!r.ok) return flash(r.message, false);
+  const rows = r.rows.map(x => { const cb = el("input", {type: "checkbox", style: "width:auto", "aria-label": "Visible"}); cb.checked = x.reviewed;
+    cb.onchange = async () => { const u = await api("event_set_reviewed", {id: x.id, reviewed: cb.checked}); flash(u.message, u.ok); };
+    const when = x.rule === "weekly" ? "Every " + ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][x.weekday] : x.dates.map(fmtDay).join(", ") || "no dates";
+    return el("tr", {}, [el("td", {}, [cb]), el("td", {}, [el("span", {class: "pill-s", style: "--cc:" + COLORS[x.culture_id], text: NAMES[x.culture_id]})]), el("td", {}, [el("strong", {text: x.title}), el("div", {class: "sub", text: x.type})]), el("td", {text: when}),
+      el("td", {}, [el("button", {class: "btn danger sm", text: "Delete", onclick: async () => { if (!confirm("Delete " + x.title + "?")) return; const u = await api("event_delete", {id: x.id}); flash(u.message, u.ok); reload(page); }})])]); });
+  body.append(el("div", {class: "scroll"}, [el("table", {class: "tbl"}, [el("thead", {}, [el("tr", {}, ["Visible", "Tradition", "Entry", "When", ""].map(h => el("th", {text: h})))]), el("tbody", {}, rows)])]), pager(page, size, r.total, reload));
+  // add form
+  const f = {c: el("select", {}, Object.keys(NAMES).map(k => el("option", {value: k, text: NAMES[k]}))), t: el("select", {}, ["festival", "fast", "ritual", "spiritual"].map(k => el("option", {value: k, text: k}))),
+    title: el("input", {type: "text", maxlength: "120", placeholder: "Title"}), desc: el("textarea", {style: "min-height:80px", maxlength: "600", placeholder: "Short description"}), dates: el("input", {type: "text", placeholder: "Dates, comma separated: 2027-02-01, 2027-02-02"}), rv: el("input", {type: "checkbox", style: "width:auto", checked: ""})};
+  body.append(el("h2", {text: "Add an event"}), el("div", {class: "panel"}, [el("div", {class: "row2"}, [f.c, f.t]), f.title, f.desc, f.dates,
+    el("label", {class: "check"}, [f.rv, el("span", {text: "Visible straight away (tick only if verified)"})]),
+    el("button", {class: "btn", text: "Add event", onclick: async () => { const u = await api("event_add", {culture_id: f.c.value, type: f.t.value, title: f.title.value, description: f.desc.value, dates: f.dates.value.split(/[,\s]+/).filter(Boolean), reviewed: f.rv.checked}); flash(u.message, u.ok); if (u.ok) reload(page); }})]));
+  const sr = await api("stories_list");
+  if (sr.ok) body.append(el("h2", {text: "Stories"}), el("div", {class: "panel"}, sr.rows.map(s => { const cb = el("input", {type: "checkbox", style: "width:auto", "aria-label": "Visible"}); cb.checked = s.reviewed;
+    cb.onchange = async () => { const u = await api("story_set_reviewed", {id: s.id, reviewed: cb.checked}); flash(u.message, u.ok); };
+    return el("label", {class: "check", style: "margin:6px 0"}, [cb, el("span", {text: NAMES[s.culture_id] + ": " + s.title})]); })));
+}
+
+function settings(body) {
+  const cur = el("input", {type: "password", id: "cur", autocomplete: "current-password"}), nw = el("input", {type: "password", id: "nw", autocomplete: "new-password"});
+  body.append(el("h2", {text: "Change password"}), el("div", {class: "panel"}, [el("label", {for: "cur", text: "Current password"}), cur, el("label", {for: "nw", text: "New password (at least 12 characters)"}), nw,
+    el("button", {class: "btn", text: "Change password", onclick: async () => { const u = await api("change_password", {current_password: cur.value, new_password: nw.value}); if (!u.ok) flash(u.message, false); }})]),
+    el("h2", {text: "Session"}), el("div", {class: "panel"}, [el("p", {class: "sub", text: "You stay signed in for 8 hours on this device, or until you close this tab."}), el("button", {class: "btn ghost", text: "Sign out", onclick: () => signOut("Signed out.")})]),
+    el("h2", {text: "Notes"}), el("div", {class: "panel"}, [el("p", {class: "sub", text: "Five wrong passwords lock sign-in for 15 minutes. Changing the password signs out every device. Settings such as email and WhatsApp keys live in Supabase under Edge Functions, Secrets."})]));
+}
+
+if (!configured()) root.append(el("p", {class: "msg bad", text: "config.js isn't set up."})); else if (A.token) shell("overview"); else login();
+</script>
+</body>
+</html>

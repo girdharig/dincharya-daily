@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<title>Today · Dincharya</title>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:wght@400;600&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<link rel="manifest" href="/manifest.webmanifest"><meta name="theme-color" content="#1E2340"><link rel="apple-touch-icon" href="/icons/apple-touch-icon.png"><meta property="og:type" content="website"><meta property="og:site_name" content="Dincharya"><meta property="og:title" content="Today · Dincharya"><meta property="og:description" content="Festivals, fasts, rituals, practices and stories for the traditions you follow, by email and WhatsApp."><meta property="og:image" content="https://www.dincharya.co.in/icons/og.png"><meta property="og:url" content="https://www.dincharya.co.in/app"><meta name="twitter:card" content="summary_large_image"><link rel="canonical" href="https://www.dincharya.co.in/app"><meta name="description" content="Festivals, fasts, rituals, practices and stories for the traditions you follow, by email and WhatsApp."></head>
+<body data-page="app" data-cta="off" data-footer="off">
+<main class="wrap app-wrap" id="app"></main>
+<nav id="nav" hidden>
+  <button data-v="today">Today</button><button data-v="cal">Calendar</button><button data-v="soon">Upcoming</button><button data-v="sub">Subscribe</button>
+</nav>
+<script src="config.js"></script>
+<script src="common.js"></script>
+<script src="astro.js"></script>
+<script src="site.js"></script>
+<script>
+const VIEWS = ["today", "cal", "soon", "sub"];
+let st = {cultures: [], view: "pick", want: "today", cal: null, filter: "all"};
+try { const s = JSON.parse(localStorage.getItem("dina") || "null"); if (s && Array.isArray(s.cultures)) st.cultures = s.cultures.filter(c => NAMES[c]); } catch {}
+const save = () => { try { localStorage.setItem("dina", JSON.stringify({cultures: st.cultures})); } catch {} };
+const asked = new URLSearchParams(location.search).get("view");
+st.want = VIEWS.includes(asked) ? asked : "today";
+st.view = st.cultures.length ? st.want : "pick";
+const ARGS = (over = {}) => ({p_cultures: st.cultures, p_lang: LANG, ...over});
+const dayAfter = (d, n = 1) => { const x = new Date(d + "T00:00"); x.setDate(x.getDate() + n); return iso(x); };
+
+function artFor(c, type, title) {
+  const t = title.toLowerCase();
+  if (/diwali|deepam|dhanteras|hanukkah|bandi chhor|tazaung|krathong|lamp|light/.test(t)) return "c-light";
+  if (/purnima|uposatha|moon|rosh chodesh|white days|isra|sha.ban|bodhi/.test(t)) return "c-moon";
+  if (/pongal|lohri|sankranti|bihu|harvest|tu bishvat/.test(t)) return "c-harvest";
+  if (type === "fast") return "c-vows";
+  return "s-" + c;
+}
+function card(c, type, title, text, date, meaning) {
+  return el("div", {class: "item", style: "--cc:" + COLORS[c]}, [
+    type === "festival" || type === "fast" ? el("img", {class: "card-art", src: "img/" + artFor(c, type, title) + ".svg", alt: "", loading: "lazy", width: "300", height: "96"}) : "",
+    el("div", {class: "meta", text: NAMES[c] + " · " + (TYPES[type] || type)}), el("h3", {text: title}), el("p", {text}),
+    meaning ? el("details", {class: "why"}, [el("summary", {text: "Why it matters"}), el("p", {text: meaning})]) : "",
+    cardActions(title, text, date, artFor(c, type, title))]);
+}
+const banner = src => el("img", {class: "app-banner", src: "img/" + src + ".svg", alt: "", width: "600", height: "118"});
+function view() {
+  const app = document.getElementById("app"); app.replaceChildren();
+  document.getElementById("nav").hidden = st.view === "pick";
+  document.querySelectorAll("#nav button").forEach(b => b.setAttribute("aria-current", b.dataset.v === st.view ? "page" : "false"));
+  ({pick, today, cal, soon, sub})[st.view](app);
+}
+function pick(app) {
+  app.append(el("h1", {text: "Your day, in your tradition"}),
+    el("p", {class: "sub", text: "Choose the traditions you follow. You can pick more than one and change them any time."}));
+  app.append(el("div", {class: "mini-badges"}, Object.keys(NAMES).map(k => el("img", {src: "img/t-" + k + ".svg", alt: NAMES[k], width: "40", height: "40"}))));
+  const go = el("button", {class: "btn", text: "Continue", onclick: () => { st.view = st.want; save(); view(); }});
+  go.disabled = !st.cultures.length;
+  app.append(chipPicker(st.cultures, s => go.disabled = !s.length), go);
+  if (!configured()) app.append(el("div", {class: "note", text: "This site isn't connected to its database yet. Fill in config.js."}));
+}
+
+// ---- install as an app ----
+let deferredInstall = null;
+const standalone = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone;
+function showInstall() {
+  const m = document.getElementById("install"); if (!m || standalone()) return; m.replaceChildren();
+  const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  if (deferredInstall) m.append(el("div", {class: "install"}, [el("p", {}, [el("strong", {text: "Add Dincharya to your home screen"})]), el("p", {class: "sub", text: "Opens like an app and works offline."}),
+    el("button", {class: "btn", text: "Install app", onclick: async () => { deferredInstall.prompt(); await deferredInstall.userChoice; deferredInstall = null; showInstall(); }})]));
+  else if (ios) m.append(el("div", {class: "install"}, [el("p", {}, [el("strong", {text: "Add Dincharya to your home screen"})]), el("p", {class: "sub", text: "In Safari, tap the Share button, then “Add to Home Screen”."})]));
+}
+window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); deferredInstall = e; showInstall(); });
+
+// ---- Today ----
+// ---- countdown, sun and moon, calendar feed ----
+const daysUntil = ds => Math.round((Date.parse(ds + "T00:00:00") - Date.parse(iso(new Date()) + "T00:00:00")) / 864e5);
+function countdown(rows) {
+  const seen = new Set(), picks = rows.filter(r => (r.type === "festival" || r.type === "fast") && daysUntil(r.on_date) >= 1)
+    .filter(r => seen.has(r.title) ? false : (seen.add(r.title), true)).slice(0, 2);
+  if (!picks.length) return "";
+  return el("div", {class: "countdown"}, picks.map(r => { const n = daysUntil(r.on_date);
+    return el("div", {class: "cd", style: "--cc:" + COLORS[r.culture_id]}, [el("b", {text: n === 1 ? "Tomorrow" : "In " + n + " days"}), el("span", {text: r.title}), el("small", {text: NAMES[r.culture_id]})]); }));
+}
+function placeNow() {
+  try { const p = JSON.parse(localStorage.getItem("dina_loc") || "null"); if (p && isFinite(p.lat) && isFinite(p.lon) && p.tz) return p; } catch {}
+  return Astro.CITIES.find(c => c.tz === tzName()) || null;
+}
+function sunMoonCard() {
+  const box = el("div", {class: "item sunmoon", style: "--cc:var(--sun)"});
+  const save = c => { try { localStorage.setItem("dina_loc", JSON.stringify(c)); } catch {} draw(); };
+  function draw() {
+    box.replaceChildren(); const p = placeNow();
+    box.append(el("div", {class: "meta", text: "Sun and Moon" + (p ? " · " + p.name : "")}));
+    if (p) {
+      const now = new Date(), [y, m, d] = new Intl.DateTimeFormat("en-CA", {timeZone: p.tz}).format(now).split("-").map(Number);
+      const s = Astro.sunTimes(y, m, d, p.lat, p.lon), mo = Astro.moonInfo(now), t = x => Astro.fmtTime(x, p.tz);
+      const when = x => new Intl.DateTimeFormat(undefined, {weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit", timeZone: p.tz}).format(x);
+      box.append(el("p", {class: "sm-row"}, ["☀️ Sunrise ", el("b", {text: t(s.rise)}), "  ·  Sunset ", el("b", {text: t(s.set)})]),
+        el("p", {class: "sub", text: s.rise && s.set ? "Daylight " + Astro.hm(s.set - s.rise) : "The sun doesn't rise or set here today."}),
+        el("p", {class: "sm-row"}, [mo.icon + " " + mo.name + " · about " + mo.lit + "% lit"]),
+        el("p", {class: "sub", text: "Next full moon " + when(mo.nextFull) + ". Next new moon " + when(mo.nextNew) + "."}));
+    } else box.append(el("p", {class: "sub", text: "Choose your place to see sunrise, sunset and the moon."}));
+    const sel = el("select", {"aria-label": "Choose your place"}, [el("option", {value: "", text: "Choose your place…"})].concat(Astro.CITIES.map(c => el("option", {value: c.name, text: c.name}))));
+    sel.value = p && Astro.CITIES.some(c => c.name === p.name) ? p.name : "";
+    sel.onchange = () => { const c = Astro.CITIES.find(x => x.name === sel.value); if (c) save(c); };
+    const gps = el("button", {type: "button", class: "linkbtn", text: "Use my location", onclick: () => navigator.geolocation && navigator.geolocation.getCurrentPosition(
+      pos => save({name: "My location", lat: pos.coords.latitude, lon: pos.coords.longitude, tz: tzName()}), () => {}, {maximumAge: 3600000, timeout: 8000})});
+    box.append(el("div", {class: "acts"}, [sel, gps]), el("p", {class: "hint", text: "Calculated for this place and kept only on your device. Your community's timetable may differ by a few minutes."}));
+  }
+  draw(); return box;
+}
+function feedPanel() {
+  const feed = CFG.FUNCTIONS_URL + "/calendar?c=" + st.cultures.join(",") + (LANG !== "en" ? "&lang=" + LANG : ""), webcal = feed.replace(/^https?:/, "webcal:");
+  const copy = el("button", {class: "linkbtn", type: "button", text: "Copy link", onclick: async e => { try { await navigator.clipboard.writeText(feed); e.target.textContent = "Copied"; } catch { e.target.textContent = "Copy not available"; } }});
+  return el("div", {class: "item", style: "--cc:var(--acc)"}, [el("h3", {text: "Add these to your calendar"}),
+    el("p", {text: "A live calendar of festivals and fasts for your traditions. It updates by itself when we add more."}),
+    el("div", {class: "acts"}, [el("a", {class: "linkbtn", href: "https://calendar.google.com/calendar/r?cid=" + encodeURIComponent(webcal), target: "_blank", rel: "noopener", text: "Google Calendar"}),
+      el("a", {class: "linkbtn", href: webcal, text: "Apple / Outlook"}), copy]), el("p", {class: "hint", text: "Lunar festival dates can differ by region."})]);
+}
+
+function renderToday(box, d, items, stories, soonRows, offlineNote) {
+  box.replaceChildren();
+  if (offlineNote) box.append(el("div", {class: "offline", text: offlineNote}));
+  box.append(countdown(soonRows), sunMoonCard());
+  box.append(el("h2", {text: "Festivals, fasts and practice"}));
+  if (!items.length) box.append(el("p", {text: "Nothing listed for today."}));
+  items.forEach(i => box.append(card(i.culture_id, i.type, i.title, i.description, null, i.meaning)));
+  if (stories.length) box.append(el("h2", {text: "Story for today"}));
+  stories.forEach(s => box.append(el("div", {class: "item story", style: "--cc:var(--sun)"}, [
+    el("img", {class: "card-art", src: "img/s-" + s.culture_id + ".svg", alt: "", loading: "lazy", width: "300", height: "96"}), el("div", {class: "meta", text: NAMES[s.culture_id]}), el("h3", {text: s.title}), el("p", {text: s.body}),
+    s.lesson ? el("p", {class: "lesson"}, [el("strong", {text: "What it teaches: "}), s.lesson]) : "", cardActions(s.title, s.body, null, "s-" + s.culture_id)])));
+  const week = soonRows.filter(r => daysUntil(r.on_date) <= 7);
+  if (week.length) {
+    box.append(el("h2", {text: "Coming up this week"}));
+    week.slice(0, 6).forEach(r => box.append(el("div", {class: "soon-row", style: "--cc:" + COLORS[r.culture_id]}, [
+      el("b", {text: new Date(r.on_date + "T00:00").toLocaleDateString(undefined, {weekday: "short", day: "numeric", month: "short"})}), el("span", {}, [el("i"), r.title])])));
+    box.append(el("button", {class: "linkbtn", text: "See the full calendar", onclick: () => { st.view = "cal"; view(); }}));
+  }
+}
+async function today(app) {
+  const d = new Date(), day = iso(d);
+  app.append(banner("s-" + st.cultures[0]), el("h1", {text: "Today"}), el("p", {class: "date", text: fmt(d)}));
+  const box = el("div", {}, [el("p", {class: "sub", text: "Loading…"})]); app.append(box);
+  try {
+    const [items, stories, soonRows] = await Promise.all([
+      rpc("today_items", ARGS({p_date: day})), rpc("story_for", ARGS({p_date: day})), rpc("upcoming_items", ARGS({p_from: dayAfter(day), p_days: 45}))]);
+    renderToday(box, d, items, stories, soonRows);
+    try { localStorage.setItem("dina_cache", JSON.stringify({day, cultures: st.cultures, items, stories, soonRows})); } catch {}
+  } catch (e) {
+    let c = null; try { c = JSON.parse(localStorage.getItem("dina_cache") || "null"); } catch {}
+    if (c && JSON.stringify(c.cultures) === JSON.stringify(st.cultures)) renderToday(box, d, c.items, c.stories, c.soonRows, "You're offline. Showing what we saved on " + fmt(new Date(c.day + "T00:00")) + ".");
+    else box.replaceChildren(el("p", {class: "msg bad", text: "Couldn't load today's content. Check your connection and reload."}));
+  }
+  app.append(el("div", {id: "install"}));
+  showInstall();
+  app.append(el("p", {class: "sub", text: "Traditions: " + st.cultures.map(c => NAMES[c]).join(", ")}),
+    el("div", {class: "row"}, [el("button", {class: "btn", text: "Get this every morning", onclick: () => { st.view = "sub"; view(); }}),
+    el("button", {class: "btn ghost", text: "Change traditions", onclick: () => { st.want = "today"; st.view = "pick"; view(); }})]));
+}
+
+// ---- Month calendar ----
+async function cal(app) {
+  const now = new Date();
+  if (!st.cal) st.cal = {y: now.getFullYear(), m: now.getMonth(), sel: iso(now)};
+  const {y, m} = st.cal, first = new Date(y, m, 1), nDays = new Date(y, m + 1, 0).getDate();
+  const go = n => { const t = new Date(y, m + n, 1); st.cal = {y: t.getFullYear(), m: t.getMonth(), sel: iso(t)}; view(); };
+  app.append(banner("c-moon"), el("h1", {text: "Calendar"}), el("div", {class: "cal-head"}, [
+    el("button", {class: "btn ghost sm", style: "margin:0", text: "‹ Prev", "aria-label": "Previous month", onclick: () => go(-1)}),
+    el("h2", {text: first.toLocaleDateString(undefined, {month: "long", year: "numeric"})}),
+    el("button", {class: "btn ghost sm", style: "margin:0", text: "Next ›", "aria-label": "Next month", onclick: () => go(1)})]));
+  const grid = el("div", {class: "cal", role: "group", "aria-label": "Days of the month"}), detail = el("div", {"aria-live": "polite"});
+  ["S", "M", "T", "W", "T", "F", "S"].forEach(x => grid.append(el("div", {class: "dow", "aria-hidden": "true", text: x})));
+  for (let i = 0; i < first.getDay(); i++) grid.append(el("div"));
+  app.append(grid, detail);
+  let byDay = {};
+  try {
+    (await rpc("upcoming_items", ARGS({p_from: iso(first), p_days: nDays}))).forEach(r => (byDay[r.on_date] ??= []).push(r));
+  } catch (e) { detail.append(el("p", {class: "msg bad", text: "Couldn't load this month. Check your connection."})); }
+  const btns = {};
+  for (let day = 1; day <= nDays; day++) {
+    const key = iso(new Date(y, m, day)), rows = byDay[key] || [];
+    const b = el("button", {type: "button", class: "d" + (key === iso(now) ? " today" : ""), "aria-pressed": String(key === st.cal.sel),
+      "aria-label": new Date(y, m, day).toLocaleDateString(undefined, {weekday: "long", day: "numeric", month: "long"}) + (rows.length ? ", " + rows.length + (rows.length === 1 ? " event" : " events") : "")},
+      [el("span", {text: String(day)}), el("span", {class: "dots"}, [...new Set(rows.map(r => r.culture_id))].slice(0, 4).map(c => el("i", {style: "--cc:" + COLORS[c]})))]);
+    b.onclick = () => { st.cal.sel = key; Object.entries(btns).forEach(([k, x]) => x.setAttribute("aria-pressed", String(k === key))); showDay(); };
+    btns[key] = b; grid.append(b);
+  }
+  async function showDay() {
+    const key = st.cal.sel; detail.replaceChildren(el("h2", {text: fmt(new Date(key + "T00:00"))}));
+    try {
+      const items = await rpc("today_items", ARGS({p_date: key})), dated = new Set((byDay[key] || []).map(r => r.title));
+      if (!items.length) detail.append(el("p", {text: "Nothing listed for this day."}));
+      items.forEach(i => detail.append(card(i.culture_id, i.type, i.title, i.description, dated.has(i.title) ? key : null, i.meaning)));
+    } catch (e) { detail.append(el("p", {class: "msg bad", text: "Couldn't load this day."})); }
+  }
+  if (iso(first) <= st.cal.sel && st.cal.sel <= iso(new Date(y, m, nDays))) showDay(); else { st.cal.sel = iso(first); btns[st.cal.sel].setAttribute("aria-pressed", "true"); showDay(); }
+  app.append(el("p", {class: "sub", text: "Dots show festivals and fasts. Daily practices are on the Today tab."}), feedPanel());
+}
+
+// ---- Upcoming (with type filter) ----
+async function soon(app) {
+  app.append(banner("c-light"), el("h1", {text: "Upcoming"}), el("p", {class: "sub", text: "The next 90 days."}));
+  const chips = el("div", {class: "chips"}), box = el("div", {}, [el("p", {class: "sub", text: "Loading…"})]);
+  app.append(chips, box);
+  let rows = [];
+  const draw = () => {
+    box.replaceChildren(); let last = "", n = 0;
+    rows.filter(r => st.filter === "all" || r.type === st.filter).forEach(r => {
+      if (r.on_date !== last) { box.append(el("div", {class: "day", text: fmt(new Date(r.on_date + "T00:00"))})); last = r.on_date; }
+      box.append(card(r.culture_id, r.type, r.title, r.description, r.on_date, r.meaning)); n++;
+    });
+    if (!n) box.append(el("p", {text: "Nothing of this type in the next 90 days."}));
+  };
+  [["all", "All"], ["festival", "Festivals"], ["fast", "Fasts"], ["ritual", "Rituals"]].forEach(([k, n]) => {
+    const b = el("button", {type: "button", class: "chip", style: "--cc:var(--acc)", "aria-pressed": String(st.filter === k), text: n});
+    b.onclick = () => { st.filter = k; chips.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", String(x === b))); draw(); };
+    chips.append(b);
+  });
+  try { rows = await rpc("upcoming_items", ARGS({p_from: iso(new Date()), p_days: 90})); draw(); }
+  catch (e) { box.replaceChildren(el("p", {class: "msg bad", text: "Couldn't load upcoming events. Reload to try again."})); }
+}
+
+// ---- Subscribe ----
+function sub(app) {
+  app.append(banner("h-river"), el("h1", {text: "Get your day every morning"}),
+    el("p", {class: "sub", text: "A free email with today's festivals, fasts, practice and story. Add WhatsApp if you'd like a short message with a link too."}),
+    el("p", {class: "sub", text: "You can also get it on Telegram."}));
+  const em = el("input", {type: "email", id: "em", placeholder: "you@example.com", autocomplete: "email", required: ""});
+  const tm = el("input", {type: "time", id: "tm", value: "07:00"});
+  const hp = el("input", {type: "text", name: "website", tabindex: "-1", autocomplete: "off", "aria-hidden": "true"});
+  const prefix = /^Asia\/(Kolkata|Calcutta)$/.test(tzName()) ? "+91 " : "+";
+  const ph = el("input", {type: "tel", id: "ph", placeholder: "+91 98765 43210", autocomplete: "tel", value: prefix});
+  const wa = el("input", {type: "checkbox", id: "wa"}), tg = el("input", {type: "checkbox", id: "tg"});
+  const waBox = el("div", {hidden: ""}, [
+    el("p", {class: "sub", text: "By ticking, you agree to receive a short daily WhatsApp message from Dincharya on the number above. Reply STOP any time."}),
+    el("div", {class: "wa"}, ["🪔 Today: Diwali, Friday for Lakshmi. Details and today's story: " + location.origin + "/app", el("small", {text: "Reply STOP to stop these messages."})]),
+    el("p", {class: "sub", text: "We'll send a 6-digit code on WhatsApp after you confirm your email."})]);
+  const tgBox = el("div", {hidden: ""}, [el("p", {class: "sub", text: "After you confirm your email, we'll show a button that opens our Telegram bot. Press Start there and you're connected. Send /stop to pause."})]);
+  wa.onchange = () => { waBox.hidden = !wa.checked; }; tg.onchange = () => { tgBox.hidden = !tg.checked; };
+  const msg = el("p", {class: "msg", role: "status"});
+  const btn = el("button", {class: "btn", text: "Subscribe free"});
+  const bad = t => { msg.className = "msg bad"; msg.textContent = t; };
+  btn.onclick = async () => {
+    msg.className = "msg"; msg.textContent = "";
+    if (!/^\S+@\S+\.\S+$/.test(em.value.trim())) return bad("Enter a valid email address.");
+    const num = ph.value.trim(), hasNum = !["", "+", "+91"].includes(num);
+    if (hasNum && !/^\+[\d\s().-]{8,20}$/.test(num)) return bad("Start your mobile number with + and the country code, like +91 98765 43210.");
+    if (wa.checked && !hasNum) return bad("Add your mobile number to get WhatsApp messages.");
+    const body = {email: em.value.trim(), cultures: st.cultures, send_time: tm.value, timezone: tzName(), language: LANG, website: hp.value};
+    if (hasNum) body.phone = num;
+    if (wa.checked) body.whatsapp_consent = true;
+    if (tg.checked) body.telegram = true;
+    btn.disabled = true; btn.textContent = "Subscribing…";
+    const r = await fn("subscribe", body);
+    btn.disabled = false; btn.textContent = "Subscribe free";
+    msg.className = "msg " + (r.ok ? "ok" : "bad"); msg.textContent = r.message;
+  };
+  app.append(el("label", {for: "em", text: "Email"}), em, el("label", {for: "tm", text: "Send time (" + tzName() + ")"}), tm,
+    el("div", {class: "hp"}, [hp]),
+    el("label", {for: "ph", text: "Mobile number (optional)"}), ph,
+    el("p", {class: "sub", text: "Start with + and your country code. Used only for the WhatsApp option below. Never shared or used for ads."}),
+    el("label", {class: "check", for: "wa"}, [wa, el("span", {text: "Send my daily message on WhatsApp"})]), waBox,
+    el("label", {class: "check", for: "tg"}, [tg, el("span", {text: "Send my daily message on Telegram"})]), tgBox,
+    el("p", {class: "sub", text: "Traditions: " + st.cultures.map(c => NAMES[c]).join(", ")}), btn, msg,
+    el("p", {class: "sub"}, ["By subscribing you agree to the ", el("a", {href: "/privacy", text: "privacy notice"}), "."]));
+}
+document.getElementById("nav").addEventListener("click", e => { const b = e.target.closest("button"); if (b) { st.view = b.dataset.v; view(); window.scrollTo(0, 0); } });
+document.querySelectorAll("#nav button").forEach(b => b.textContent = tr(b.textContent));
+view();
+</script>
+</body>
+</html>

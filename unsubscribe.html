@@ -1,0 +1,21 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="robots" content="noindex"><link rel="icon" href="favicon.svg" type="image/svg+xml"><link href="https://fonts.googleapis.com/css2?family=Newsreader:wght@400;600&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet"><link rel="stylesheet" href="style.css"><title>Unsubscribe</title><meta name="theme-color" content="#1E2340"><link rel="apple-touch-icon" href="/icons/apple-touch-icon.png"></head>
+<body data-page="unsub" data-cta="off" data-footer="off">
+<main class="page">
+  <h1>Unsubscribe</h1>
+  <p class="sub">You'll stop receiving the daily email and WhatsApp message. You can subscribe again any time.</p>
+  <button class="btn" id="go">Unsubscribe</button>
+  <p class="msg" id="msg" role="status"></p>
+  <p><a href="/">Back to Dincharya</a></p>
+</main>
+<script src="config.js"></script><script src="common.js"></script><script src="site.js"></script>
+<script>
+const token = new URLSearchParams(location.search).get("token") || "";
+const go = document.getElementById("go"), msg = document.getElementById("msg");
+if (!token) { go.hidden = true; msg.className = "msg bad"; msg.textContent = "This link is incomplete. Open it again from your email."; }
+go.onclick = async () => {
+  go.disabled = true;
+  const r = await fn("unsubscribe", {token});
+  msg.className = "msg " + (r.ok ? "ok" : "bad"); msg.textContent = r.message;
+  if (r.ok) go.hidden = true; else go.disabled = false;
+};
+</script></body></html>

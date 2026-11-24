@@ -1,0 +1,31 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><link rel="icon" href="favicon.svg" type="image/svg+xml"><link href="https://fonts.googleapis.com/css2?family=Newsreader:wght@400;600&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet"><link rel="stylesheet" href="style.css"><title>Stories · Dincharya</title><meta name="description" content="Short stories from the Hindu, Christian, Muslim, Buddhist, Jewish and Sikh traditions. Read them, share them, tell them at dinner."><link rel="manifest" href="/manifest.webmanifest"><meta name="theme-color" content="#1E2340"><link rel="apple-touch-icon" href="/icons/apple-touch-icon.png"><meta property="og:type" content="website"><meta property="og:site_name" content="Dincharya"><meta property="og:title" content="Stories · Dincharya"><meta property="og:description" content="Short stories from the Hindu, Christian, Muslim, Buddhist, Jewish and Sikh traditions. Read them, share them, tell them at dinner."><meta property="og:image" content="https://www.dincharya.co.in/icons/og.png"><meta property="og:url" content="https://www.dincharya.co.in/stories"><meta name="twitter:card" content="summary_large_image"><link rel="canonical" href="https://www.dincharya.co.in/stories"></head>
+<body data-page="stories">
+<main class="page">
+<img class="banner" src="img/c-stories.svg" alt="" width="800" height="220">
+<h1>Stories</h1>
+<p class="lead">Short stories from each tradition. Read one, share it, or tell it to a child at dinner. A new one arrives in your daily message.</p>
+<div class="chips" id="chips" role="group" aria-label="Filter by tradition"></div>
+<div id="list"><p class="sub">Loading…</p></div>
+<div class="row"><a class="btn" href="/app?view=sub">Get a story every day</a></div>
+</main>
+<script src="config.js"></script><script src="common.js"></script>
+<script>
+let all = [], on = new Set();
+const chips = document.getElementById("chips"), list = document.getElementById("list");
+function draw() {
+  list.replaceChildren(); const shown = all.filter(s => !on.size || on.has(s.culture_id));
+  if (!shown.length) list.append(el("p", {text: "No stories yet."}));
+  shown.forEach(s => list.append(el("div", {class: "item story", style: "--cc:" + COLORS[s.culture_id]}, [
+    el("img", {class: "card-art", src: "img/s-" + s.culture_id + ".svg", alt: "", loading: "lazy", width: "300", height: "96"}),
+    el("div", {class: "meta", text: NAMES[s.culture_id]}), el("h3", {text: s.title}), el("p", {text: s.body}),
+    s.lesson ? el("p", {class: "lesson"}, [el("strong", {text: "What it teaches: "}), s.lesson]) : "", cardActions(s.title, s.body, null, "s-" + s.culture_id)])));
+}
+Object.keys(NAMES).forEach(k => {
+  const b = el("button", {type: "button", class: "chip", style: "--cc:" + COLORS[k], "aria-pressed": "false"}, [el("i"), NAMES[k]]);
+  b.onclick = () => { on.has(k) ? on.delete(k) : on.add(k); b.setAttribute("aria-pressed", String(on.has(k))); draw(); };
+  chips.append(b);
+});
+rest("stories?select=culture_id,title,body,lesson&reviewed=eq.true&order=culture_id.asc,title.asc").then(r => { all = r; draw(); })
+  .catch(() => list.replaceChildren(el("p", {class: "msg bad", text: "Couldn't load stories. Check your connection and reload."})));
+</script>
+<script src="site.js"></script></body></html>

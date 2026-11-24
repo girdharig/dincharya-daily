@@ -1,0 +1,7 @@
+User-agent: *
+Disallow: /admin
+Disallow: /confirm
+Disallow: /unsubscribe
+Disallow: /preferences
+
+Sitemap: https://www.dincharya.co.in/sitemap.xml

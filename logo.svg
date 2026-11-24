@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="Dincharya">
+  <rect width="100" height="100" rx="22" fill="#1E2340"/>
+  <circle cx="86" cy="50" r="6" fill="#D9731F"/>
+  <circle cx="68" cy="81.2" r="6" fill="#3C6FD1"/>
+  <circle cx="32" cy="81.2" r="6" fill="#1E8E5A"/>
+  <circle cx="14" cy="50" r="6" fill="#B8860B"/>
+  <circle cx="32" cy="18.8" r="6" fill="#6B53C9"/>
+  <circle cx="68" cy="18.8" r="6" fill="#C23B6B"/>
+  <path d="M50 33 C44 42 39 47 39 55 a11 11 0 0 0 22 0 C61 47 56 42 50 33 Z" fill="#F2B94B"/>
+  <path d="M50 47 C47 52 45 55 45 58.5 a5 5 0 0 0 10 0 C55 55 53 52 50 47 Z" fill="#FFF1C9"/>
+</svg>
